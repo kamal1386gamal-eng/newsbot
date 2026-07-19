@@ -22,19 +22,40 @@ async def forward_handler(msg: types.Message):
         return
 
     user_id = msg.from_user.id
-    # ذخیره پیام اصلی و کپشن اولیه (اگه وجود داشت)
+    caption = msg.caption or ""
     state[user_id] = {
         "msg": msg,
-        "caption": msg.caption or ""
+        "caption": caption
     }
 
+    # دکمه‌ها
     kb = InlineKeyboardMarkup(inline_keyboard=[
         [
             InlineKeyboardButton(text="✅ تایید", callback_data="confirm_direct"),
             InlineKeyboardButton(text="✏️ ویرایش", callback_data="edit_caption")
         ]
     ])
-    await msg.answer("📥 فوروارد دریافت شد. می‌خوای مستقیماً تایید کنی یا کپشن رو ویرایش کنی؟", reply_markup=kb)
+
+    # 👁️ نمایش مستقیم پیش‌نمایش با کپشن اصلی (اگه بود) و دکمه‌ها
+    if msg.photo:
+        await bot.send_photo(
+            chat_id=user_id,
+            photo=msg.photo[-1].file_id,
+            caption=caption if caption else None,  # کپشن خالی نباشه
+            reply_markup=kb
+        )
+    elif msg.video:
+        await bot.send_video(
+            chat_id=user_id,
+            video=msg.video.file_id,
+            caption=caption if caption else None,
+            reply_markup=kb
+        )
+    # پیام فوروارد اصلی رو می‌تونیم حذف کنیم (اختیاری)
+    # try:
+    #     await msg.delete()
+    # except:
+    #     pass
 
 
 # ─────────────── مدیریت دکمه‌ها ───────────────
@@ -90,7 +111,6 @@ async def callback_handler(call: types.CallbackQuery):
         except Exception as e:
             await bot.send_message(user_id, f"❌ خطا در انتشار: {e}")
         else:
-            # حذف پیام پیش‌نمایش
             try:
                 await call.message.delete()
             except Exception:
@@ -101,7 +121,6 @@ async def callback_handler(call: types.CallbackQuery):
 
     # ── دکمه ویرایش در پیش‌نمایش → برگشت به درخواست کپشن ──
     if call.data == "edit_caption_again":
-        # حذف پیام پیش‌نمایش
         try:
             await call.message.delete()
         except Exception:
@@ -119,9 +138,8 @@ async def caption_handler(msg: types.Message):
 
     user_id = msg.from_user.id
     if user_id not in state or state[user_id]["caption"] is not None:
-        return   # فقط وقتی پردازش کنیم که caption=None باشد
+        return
 
-    # ذخیره کپشن جدید
     state[user_id]["caption"] = msg.text.strip()
     original = state[user_id]["msg"]
     preview_caption = state[user_id]["caption"] + "\n\n" + CHANNEL
@@ -133,13 +151,11 @@ async def caption_handler(msg: types.Message):
         ]
     ])
 
-    # حذف پیام متنی کاربر (اختیاری)
     try:
         await msg.delete()
     except Exception:
         pass
 
-    # ارسال پیش‌نمایش
     try:
         if original.photo:
             await bot.send_photo(user_id, original.photo[-1].file_id, caption=preview_caption, reply_markup=kb)
